@@ -1,0 +1,171 @@
+#!/usr/bin/env python
+#The line above is important so that this file is interpreted with Python when running it.
+
+# Import of python modules.
+import math # use of pi.
+
+# import of relevant libraries.
+import rospy # module for ROS APIs
+from geometry_msgs.msg import Twist # message type for cmd_vel
+from sensor_msgs.msg import LaserScan # message type for scan
+from nav_msgs.msg import Odometry # message type for odom
+from std_msgs.msg import Float32 # message type for a float
+
+# Constants.
+FREQUENCY = 10 #Hz.
+LINEAR_VELOCITY = 0.2 # m/s
+ANGULAR_VELOCITY = math.pi/4 # rad/s
+LASER_ANGLE_FRONT = 0 # radians
+MIN_THRESHOLD_DISTANCE = 0.5 # m, threshold distance.
+DEFAULT_CMD_VEL_TOPIC = 'cmd_vel'
+DEFAULT_SCAN_TOPIC = 'scan'
+DEFAULT_ODOMETRY_TOPIC = 'odom'
+DEFAULT_ERROR_TOPIC = '/rpm_err'
+
+class RegularPolygonMotion():
+    def __init__(self, linear_velocity=LINEAR_VELOCITY, angular_velocity=ANGULAR_VELOCITY):
+        """Constructor."""
+
+        # Setting up publishers/subscribers.
+        self._cmd_pub = rospy.Publisher(DEFAULT_CMD_VEL_TOPIC, Twist, queue_size=1)
+        self._err_pub = rospy.Publisher(DEFAULT_ERROR_TOPIC, Float32, queue_size=1)
+
+        # Setting up subscribers.
+        self._laser_sub = rospy.Subscriber(DEFAULT_SCAN_TOPIC, LaserScan, self._laser_callback, queue_size=1)
+        self._odom_sub = rospy.Subscriber(DEFAULT_ODOMETRY_TOPIC, Odometry, self._odom_callback, queue_size=1)
+
+        # Other variables.
+        self.linear_velocity = linear_velocity # Constant linear velocity set.
+        self.angular_velocity = angular_velocity # Constant angular velocity set.
+        self._close_obstacle = False # Flag variable that is true if there is a close obstacle.
+        self._point = (0,0,0) # NOTE: assumption: robot starts at x=0, y=0, and the yaw angle is 0
+
+    def move_forward(self, distance):
+        """Function to move_forward for a given distance."""
+        # Rate at which to operate the while loop.
+        rate = rospy.Rate(FREQUENCY)
+
+        # Setting velocities. 
+        twist_msg = Twist()
+        twist_msg.linear.x = self.linear_velocity
+        start_time = rospy.get_rostime()
+        duration = rospy.Duration(distance/twist_msg.linear.x)
+
+        # Loop.
+        while not rospy.is_shutdown():
+            # Check if traveled of given distance based on time.
+            if rospy.get_rostime() - start_time >= duration:
+                break
+
+            # Publish message.
+            if self._close_obstacle:
+                self.stop()
+            else:
+                self._cmd_pub.publish(twist_msg)
+
+            # Sleep to keep the set publishing frequency.
+            rate.sleep()
+
+        # Traveled the required distance, stop.
+        self.stop()
+        
+    def rotate_in_place(self, rotation_angle):
+        """
+        Rotate in place the robot of rotation_angle (rad) based on fixed velocity.
+        Assumption: Counterclockwise rotation.
+        """
+        twist_msg = Twist()
+        twist_msg.angular.z = self.angular_velocity
+        
+        duration = rotation_angle / twist_msg.angular.z
+        start_time = rospy.get_rostime()
+        rate = rospy.Rate(FREQUENCY)
+        while not rospy.is_shutdown():
+            # Check if done
+            if rospy.get_rostime() - start_time >= rospy.Duration(duration):
+                break
+                
+            # Publish message.
+            self._cmd_pub.publish(twist_msg)
+            
+            # Sleep to keep the set frequency.
+            rate.sleep()
+
+        # Rotated the required angle, stop.
+        self.stop()
+
+    def stop(self):
+        """Stop the robot."""
+        twist_msg = Twist()
+        self._cmd_pub.publish(twist_msg)
+
+    def move_polygon(self):
+        """Moving the robot in a polygon shape specified by parameters."""
+        num_sides = rospy.get_param('/regular_polygon_motion/num_sides')
+        is_clockwise = rospy.get_param('/regular_polygon_motion/is_clockwise')
+        side_length = rospy.get_param('/regular_polygon_motion/side_length')
+
+        # get the turning angle at each vertex based on polygon interior angle and movement direction
+        turning_angle = ((num_sides - 2) * math.pi) / num_sides
+        if is_clockwise:
+            turning_angle = math.pi + turning_angle
+        else:
+            turning_angle = math.pi - turning_angle
+
+        # Robot moves forward side_length units and rotates turning_angle radians until it traverses the regular polygon
+        expected_yaw, expected_x, expected_y = 0, 0, 0
+        self._err_pub.publish(0.0)
+        for _ in range(num_sides):
+            self.move_forward(side_length)
+            self.rotate_in_place(turning_angle)
+                
+             # calculate expected robot position, yaw, and error
+            expected_x += math.cos(expected_yaw) * side_length
+            expected_y += math.sin(expected_yaw) * side_length
+            expected_yaw += turning_angle
+            err = abs(((self._x_pos - expected_x)**2 + (self._y_pos - expected_y)**2)**0.5)
+
+            # log and publish error 
+            rospy.loginfo(err)
+            self._err_pub.publish(err)
+            
+    def _laser_callback(self, msg):
+        """Processing of laser message."""
+        # Access to the index of the measurement in front of the robot.
+        # NOTE: assumption: the one at angle 0 corresponds to the front.
+        i = int((LASER_ANGLE_FRONT - msg.angle_min) / msg.angle_increment)
+        if msg.ranges[i] <= MIN_THRESHOLD_DISTANCE:
+            self._close_obstacle = True
+        else:
+            self._close_obstacle = False
+
+    def _odom_callback(self, msg):
+        """Processing of odom message."""
+        self._x_pos = msg.pose.pose.position.x
+        self._y_pos = msg.pose.pose.position.y
+
+def main():
+    """Main function."""
+
+    # 1st. initialization of node.
+    rospy.init_node("regular_polygon_motion")
+
+    # Sleep for a few seconds to wait for the registration.
+    rospy.sleep(2)
+
+    # Initialization of the class for the regular polygon motion.
+    regular_polygon_motion = RegularPolygonMotion()
+
+    # If interrupted, send a stop command.
+    rospy.on_shutdown(regular_polygon_motion.stop)
+    
+    try:
+        regular_polygon_motion.move_polygon()
+
+    except rospy.ROSInterruptException:
+        rospy.logerr("ROS node interrupted.")
+
+
+if __name__ == "__main__":
+    """Run the main function."""
+    main()
