@@ -22,7 +22,7 @@ DEFAULT_SCAN_TOPIC = 'scan'
 DEFAULT_ODOMETRY_TOPIC = 'odom'
 DEFAULT_ERROR_TOPIC = '/rpm_err'
 
-class RegularPolygonMotion():
+class FlockingMotion():
     def __init__(self, linear_velocity=LINEAR_VELOCITY, angular_velocity=ANGULAR_VELOCITY):
         """Constructor."""
 
@@ -101,9 +101,9 @@ class RegularPolygonMotion():
 
     def move_polygon(self):
         """Moving the robot in a polygon shape specified by parameters."""
-        num_sides = rospy.get_param('/regular_polygon_motion/num_sides')
-        is_clockwise = rospy.get_param('/regular_polygon_motion/is_clockwise')
-        side_length = rospy.get_param('/regular_polygon_motion/side_length')
+        num_sides = 3
+        is_clockwise = True
+        side_length = 1
 
         # get the turning angle at each vertex based on polygon interior angle and movement direction
         turning_angle = ((num_sides - 2) * math.pi) / num_sides
@@ -148,19 +148,19 @@ def main():
     """Main function."""
 
     # 1st. initialization of node.
-    rospy.init_node("regular_polygon_motion")
+    rospy.init_node("flocking_motion")
 
     # Sleep for a few seconds to wait for the registration.
     rospy.sleep(2)
 
     # Initialization of the class for the regular polygon motion.
-    regular_polygon_motion = RegularPolygonMotion()
+    flocking_motion = FlockingMotion()
 
     # If interrupted, send a stop command.
-    rospy.on_shutdown(regular_polygon_motion.stop)
+    rospy.on_shutdown(flocking_motion.stop)
     
     try:
-        regular_polygon_motion.move_polygon()
+        print("yo")
 
     except rospy.ROSInterruptException:
         rospy.logerr("ROS node interrupted.")

@@ -1,4 +1,4 @@
-# regular_polygon ROS package
+# flocking_motion ROS package
 
 This ROS package contains a ROS node that allows for a simple translation and rotation based on velocities and distance/rotation, and for stop if there is anything immediately in front of it, based on laser scanner.
 

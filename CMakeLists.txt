@@ -4,7 +4,7 @@
 ## Set minimum required version of cmake, project name and compile options ##
 #############################################################################
 cmake_minimum_required(VERSION 2.8.3)
-project(regular_polygon_motion)
+project(flocking_motion)
 
 ###########################################################################
 ## Find catkin packages and libraries for catkin and system dependencies ##
@@ -54,7 +54,7 @@ include_directories(
 # See http://ros.org/doc/api/catkin/html/adv_user_guide/variables.html
 
 catkin_install_python(PROGRAMS 
-  nodes/regular_polygon_motion
+  nodes/flocking_motion
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
