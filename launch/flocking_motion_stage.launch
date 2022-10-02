@@ -1,0 +1,89 @@
+<!-- More information on ROS launch http://wiki.ros.org/roslaunch/XML -->
+
+<launch>
+  <arg name="neighbor_d" default="1.5"/>
+  <arg name="cohesion_wt" default="0.2"/>
+  <arg name="separation_wt" default="0.6"/>
+  <arg name="alignment_wt" default="0.2"/>
+  <arg name="separation_d" default="0.75"/>
+  <param name="/neighbor_d" type="double" value="$(arg neighbor_d)" />
+  <param name="/cohesion_wt" type="double" value="$(arg cohesion_wt)" />
+  <param name="/separation_wt" type="double" value="$(arg separation_wt)" />
+  <param name="/alignment_wt" type="double" value="$(arg alignment_wt)" />
+  <param name="/separation_d" type="double" value="$(arg separation_d)" />
+  <arg name="world_file"     default=" $(find flocking_motion)/world/empty_stage.world"/>
+  <param name="/use_sim_time" value="true"/>
+  <!--  ******************** Stage ********************  -->
+  <!-- 
+        Publishes transforms:
+          /base_link -> /base_laser
+          /base_footprint -> /base_link (identity)
+          /odom -> base_footprint
+        Publishes topics:
+          /odom : odometry data from the simulated odometry
+          /base_scan : laser data from the simulated laser
+          /base_pose_ground_truth : the ground truth pose
+        Parameters:
+          base_watchdog_timeout : time (s) after receiving the last command on cmd_vel before stopping the robot
+        Args:
+          -g : run in headless mode.
+  --> 
+  <node pkg="stage_ros" type="stageros" name="stageros" args="$(arg world_file)">
+    <param name="base_watchdog_timeout" value="0.5"/>
+    <remap from="base_scan" to="scan"/>
+  </node>
+
+  <arg name="first_tb3"  default="robot_0"/>
+  <arg name="second_tb3" default="robot_1"/>
+  <arg name="third_tb3"  default="robot_2"/>
+  <arg name="fourth_tb3" default="robot_3"/>
+  <arg name="fifth_tb3"  default="robot_4"/>
+  <arg name="sixth_tb3"  default="robot_5"/>
+  <arg name="seventh_tb3" default="robot_6"/>
+  <arg name="eighth_tb3" default="robot_7"/>
+  <arg name="ninth_tb3"  default="robot_8"/>
+  <arg name="tenth_tb3"  default="robot_9"/>
+  <arg name="bot_list"    default="[$(arg first_tb3),$(arg second_tb3),$(arg third_tb3),$(arg fourth_tb3),$(arg fifth_tb3),$(arg sixth_tb3),$(arg seventh_tb3),$(arg eighth_tb3),$(arg ninth_tb3),$(arg tenth_tb3)]"/>
+  <rosparam param="/bot_list" subst_value="True">$(arg bot_list)</rosparam> 
+
+  <group ns = "$(arg first_tb3)">
+    <node pkg="flocking_motion" type="flocking_motion" name="flocking_motion" output="screen"/>
+  </group>
+
+  <group ns = "$(arg second_tb3)">
+    <node pkg="flocking_motion" type="flocking_motion" name="flocking_motion" output="screen"/>
+  </group>
+
+  <group ns = "$(arg third_tb3)">
+    <node pkg="flocking_motion" type="flocking_motion" name="flocking_motion" output="screen"/>
+  </group>
+
+  <group ns = "$(arg fourth_tb3)">
+    <node pkg="flocking_motion" type="flocking_motion" name="flocking_motion" output="screen"/>
+  </group>
+
+  <group ns = "$(arg fifth_tb3)">
+    <node pkg="flocking_motion" type="flocking_motion" name="flocking_motion" output="screen"/>
+  </group>
+
+  <group ns = "$(arg sixth_tb3)">
+    <node pkg="flocking_motion" type="flocking_motion" name="flocking_motion" output="screen"/>
+  </group>
+
+  <group ns = "$(arg seventh_tb3)">
+    <node pkg="flocking_motion" type="flocking_motion" name="flocking_motion" output="screen"/>
+  </group>
+
+  <group ns = "$(arg eighth_tb3)">
+    <node pkg="flocking_motion" type="flocking_motion" name="flocking_motion" output="screen"/>
+  </group>
+
+  <group ns = "$(arg ninth_tb3)">
+    <node pkg="flocking_motion" type="flocking_motion" name="flocking_motion" output="screen"/>
+  </group>
+
+  <group ns = "$(arg tenth_tb3)">
+    <node pkg="flocking_motion" type="flocking_motion" name="flocking_motion" output="screen"/>
+  </group>
+
+</launch>

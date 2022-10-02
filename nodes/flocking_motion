@@ -2,132 +2,163 @@
 #The line above is important so that this file is interpreted with Python when running it.
 
 # Import of python modules.
+from lib2to3.pgen2.pgen import DFAState
 import math # use of pi.
 
 # import of relevant libraries.
 import rospy # module for ROS APIs
+from tf.transformations import euler_from_quaternion
 from geometry_msgs.msg import Twist # message type for cmd_vel
 from sensor_msgs.msg import LaserScan # message type for scan
 from nav_msgs.msg import Odometry # message type for odom
-from std_msgs.msg import Float32 # message type for a float
 
 # Constants.
 FREQUENCY = 10 #Hz.
 LINEAR_VELOCITY = 0.2 # m/s
-ANGULAR_VELOCITY = math.pi/4 # rad/s
+ANGULAR_VELOCITY = math.pi/1 # rad/s
 LASER_ANGLE_FRONT = 0 # radians
 MIN_THRESHOLD_DISTANCE = 0.5 # m, threshold distance.
 DEFAULT_CMD_VEL_TOPIC = 'cmd_vel'
 DEFAULT_SCAN_TOPIC = 'scan'
 DEFAULT_ODOMETRY_TOPIC = 'odom'
-DEFAULT_ERROR_TOPIC = '/rpm_err'
 
 class FlockingMotion():
     def __init__(self, linear_velocity=LINEAR_VELOCITY, angular_velocity=ANGULAR_VELOCITY):
         """Constructor."""
-
         # Setting up publishers/subscribers.
         self._cmd_pub = rospy.Publisher(DEFAULT_CMD_VEL_TOPIC, Twist, queue_size=1)
-        self._err_pub = rospy.Publisher(DEFAULT_ERROR_TOPIC, Float32, queue_size=1)
 
         # Setting up subscribers.
         self._laser_sub = rospy.Subscriber(DEFAULT_SCAN_TOPIC, LaserScan, self._laser_callback, queue_size=1)
-        self._odom_sub = rospy.Subscriber(DEFAULT_ODOMETRY_TOPIC, Odometry, self._odom_callback, queue_size=1)
+
+        # Subscribing to all robot odom topics
+        self._odom_subs = []
+        bots = rospy.get_param('/bot_list')
+        for bot in bots:
+            self._odom_subs.append(rospy.Subscriber('/'+bot+'/'+DEFAULT_ODOMETRY_TOPIC, Odometry, self._odom_callback, queue_size=1))
 
         # Other variables.
         self.linear_velocity = linear_velocity # Constant linear velocity set.
         self.angular_velocity = angular_velocity # Constant angular velocity set.
         self._close_obstacle = False # Flag variable that is true if there is a close obstacle.
         self._point = (0,0,0) # NOTE: assumption: robot starts at x=0, y=0, and the yaw angle is 0
+        self._bots_p = {} # position data of all robots
+        self._bots_a = {} # yaw angle data of all robots
+        self._this_bot =  rospy.get_namespace()+DEFAULT_ODOMETRY_TOPIC # name of the robot running this node
+        self.neighbor_d = rospy.get_param('/neighbor_d') # distance in which a robot will look for neighboring robots to flock with
+        self.cohesion_wt = rospy.get_param('/cohesion_wt') # weight of the cohesion behavior in flocking
+        self.separation_wt = rospy.get_param('/separation_wt') # weight of the separation behavior in flocking
+        self.alignment_wt = rospy.get_param('/alignment_wt') # weight of the alignment behavior in flocking
+        self.separation_d = rospy.get_param('/separation_d') # distance within which robots will separate from one another
 
-    def move_forward(self, distance):
-        """Function to move_forward for a given distance."""
-        # Rate at which to operate the while loop.
-        rate = rospy.Rate(FREQUENCY)
+    def get_avg_pos(self, bots):
+        """Utility function for getting the average position of a list of bots."""
+        total_x = 0
+        total_y = 0
+        for bot in bots:
+            total_x += self._bots_p[bot].x
+            total_y += self._bots_p[bot].y
+        avg_x = total_x / len(bots)
+        avg_y = total_y / len(bots)
 
-        # Setting velocities. 
+        return avg_x, avg_y
+    
+    def get_avg_heading(self, bot_list):
+        """Utility function for getting the average heading (positive angle in radians) of a list of bots."""
+        x = y = 0
+        for b in bot_list:
+            ba = self._bots_a[b]
+            bx, by = self.angle_to_point(ba)
+            x += bx
+            y += by
+        return self.point_to_angle(x,y)
+    
+    def point_to_angle(self, x, y):
+        """Utility function for converting a point (x,y) into the a positive angle in radians between the positive x axis and the ray from (0,0) to (x,y)."""
+        a = math.atan2(y, x)
+        if a < 0:
+            a += 2*math.pi
+        return a
+    
+    def angle_to_point(self, a):
+        """"Utility function for converting a positive angle in radians to a point (x,y) such that the angle is between the positive x axis and the ray from (0,0) to (x,y) """
+        return math.cos(a), math.sin(a)
+
+    def get_ang_distance(self, a1, a2):
+        """Utility function for getting the smallest magnitude angle in radians positive or negative from positive angle 1 to positive angle 2."""
+        a3 = a2-a1
+        if a3 > math.pi:
+            a3 -= 2*math.pi
+        return a3
+    
+    def get_point_distance(self, x1, y1, x2, y2):
+      """"Utility function for getting the distance between two points (x1,y1) and (x2,y2)."""
+      return abs(((x2 - x1)**2 + (y2 - y1)**2)**0.5)
+
+    def flock(self):
+        """Enables flocking behavior for the robot."""
         twist_msg = Twist()
-        twist_msg.linear.x = self.linear_velocity
-        start_time = rospy.get_rostime()
-        duration = rospy.Duration(distance/twist_msg.linear.x)
+        twist_msg.linear.x = self.linear_velocity # constant linear velocity
 
-        # Loop.
-        while not rospy.is_shutdown():
-            # Check if traveled of given distance based on time.
-            if rospy.get_rostime() - start_time >= duration:
-                break
-
-            # Publish message.
-            if self._close_obstacle:
-                self.stop()
-            else:
-                self._cmd_pub.publish(twist_msg)
-
-            # Sleep to keep the set publishing frequency.
-            rate.sleep()
-
-        # Traveled the required distance, stop.
-        self.stop()
-        
-    def rotate_in_place(self, rotation_angle):
-        """
-        Rotate in place the robot of rotation_angle (rad) based on fixed velocity.
-        Assumption: Counterclockwise rotation.
-        """
-        twist_msg = Twist()
-        twist_msg.angular.z = self.angular_velocity
-        
-        duration = rotation_angle / twist_msg.angular.z
-        start_time = rospy.get_rostime()
         rate = rospy.Rate(FREQUENCY)
         while not rospy.is_shutdown():
-            # Check if done
-            if rospy.get_rostime() - start_time >= rospy.Duration(duration):
-                break
+            # Verify odom data is received
+            if len(self._bots_p) > 1 and self._this_bot in self._bots_p:
+                curr_x = self._bots_p[self._this_bot].x
+                curr_y = self._bots_p[self._this_bot].y
+                curr_a = self._bots_a[self._this_bot]
+
+                # Get neighbor bots
+                neighbor_bots = []
+                separation_factors = []
+
+                for bot, bot_p in self._bots_p.items():
+                    # the current bot cannot be its own neighbor
+                    if bot == self._this_bot:
+                        continue
+
+                    # bots that are too far away are not neighbors
+                    dist = self.get_point_distance(curr_x, curr_y, bot_p.x, bot_p.y)
+                    if dist > self.neighbor_d:
+                        continue
+                    neighbor_bots.append(bot)
+
+                    # Calculate separation factor
+                    if dist < self.separation_d:
+                        s_a = self.point_to_angle(curr_x-bot_p.x, curr_y-bot_p.y)
+                        separation_ang_distance = self.get_ang_distance(curr_a, s_a)
+                        separation_factors.append(self.angular_velocity * self.separation_d / dist * separation_ang_distance / math.pi)
                 
-            # Publish message.
-            self._cmd_pub.publish(twist_msg)
+                # catch no neighbors edge case
+                if len(neighbor_bots) == 0:
+                    continue
+                
+                # Finish calculating separation factor
+                separation_factor = 0
+                if len(separation_factors) > 0:
+                    separation_factor = sum(separation_factors) / len(separation_factors)
+
+                # Calculate cohesion factor
+                avg_x, avg_y = self.get_avg_pos(neighbor_bots)
+                c_x = avg_x - curr_x
+                c_y = avg_y - curr_y
+                c_a = self.point_to_angle(c_x, c_y)
+                cohesion_ang_distance = self.get_ang_distance(curr_a, c_a)
+                cohesion_factor = self.angular_velocity * cohesion_ang_distance / math.pi
+
+                # Calculate alignment factor
+                avg_heading = self.get_avg_heading(neighbor_bots)
+                alignment_ang_distance = self.get_ang_distance(curr_a, avg_heading)
+                alignment_factor = self.angular_velocity * alignment_ang_distance / math.pi
+
+                # Weight each factor together
+                twist_msg.angular.z = self.cohesion_wt * cohesion_factor + self.separation_wt * separation_factor + self.alignment_wt * alignment_factor
+
+                # Publish message
+                self._cmd_pub.publish(twist_msg)
             
             # Sleep to keep the set frequency.
             rate.sleep()
-
-        # Rotated the required angle, stop.
-        self.stop()
-
-    def stop(self):
-        """Stop the robot."""
-        twist_msg = Twist()
-        self._cmd_pub.publish(twist_msg)
-
-    def move_polygon(self):
-        """Moving the robot in a polygon shape specified by parameters."""
-        num_sides = 3
-        is_clockwise = True
-        side_length = 1
-
-        # get the turning angle at each vertex based on polygon interior angle and movement direction
-        turning_angle = ((num_sides - 2) * math.pi) / num_sides
-        if is_clockwise:
-            turning_angle = math.pi + turning_angle
-        else:
-            turning_angle = math.pi - turning_angle
-
-        # Robot moves forward side_length units and rotates turning_angle radians until it traverses the regular polygon
-        expected_yaw, expected_x, expected_y = 0, 0, 0
-        self._err_pub.publish(0.0)
-        for _ in range(num_sides):
-            self.move_forward(side_length)
-            self.rotate_in_place(turning_angle)
-                
-             # calculate expected robot position, yaw, and error
-            expected_x += math.cos(expected_yaw) * side_length
-            expected_y += math.sin(expected_yaw) * side_length
-            expected_yaw += turning_angle
-            err = abs(((self._x_pos - expected_x)**2 + (self._y_pos - expected_y)**2)**0.5)
-
-            # log and publish error 
-            rospy.loginfo(err)
-            self._err_pub.publish(err)
             
     def _laser_callback(self, msg):
         """Processing of laser message."""
@@ -141,8 +172,13 @@ class FlockingMotion():
 
     def _odom_callback(self, msg):
         """Processing of odom message."""
-        self._x_pos = msg.pose.pose.position.x
-        self._y_pos = msg.pose.pose.position.y
+        bot = msg._connection_header['topic']
+        bot_p = msg.pose.pose.position
+        bot_quat = msg.pose.pose.orientation
+        bot_quat = [bot_quat.x, bot_quat.y, bot_quat.z, bot_quat.w]
+        _, _, bot_a = euler_from_quaternion(bot_quat)
+        self._bots_p[bot] = bot_p
+        self._bots_a[bot] = bot_a
 
 def main():
     """Main function."""
@@ -155,12 +191,9 @@ def main():
 
     # Initialization of the class for the regular polygon motion.
     flocking_motion = FlockingMotion()
-
-    # If interrupted, send a stop command.
-    rospy.on_shutdown(flocking_motion.stop)
     
     try:
-        print("yo")
+        flocking_motion.flock()
 
     except rospy.ROSInterruptException:
         rospy.logerr("ROS node interrupted.")

@@ -11,28 +11,41 @@
   <arg name="use_sim_time" default="true"/>
   <param name="use_sim_time" value="$(arg use_sim_time)"/>
 
+  <arg name="neighbor_d" default="5"/>
+  <arg name="cohesion_wt" default="0.33"/>
+  <arg name="separation_wt" default="0.33"/>
+  <arg name="alignment_wt" default="0.33"/>
+  <arg name="separation_d" default="1"/>
+  <param name="/neighbor_d" type="double" value="$(arg neighbor_d)" />
+  <param name="/cohesion_wt" type="double" value="$(arg cohesion_wt)" />
+  <param name="/separation_wt" type="double" value="$(arg separation_wt)" />
+  <param name="/alignment_wt" type="double" value="$(arg alignment_wt)" />
+  <param name="/separation_d" type="double" value="$(arg separation_d)" />
+
   <arg name="model" default="$(env TURTLEBOT3_MODEL)" doc="model type [burger, waffle, waffle_pi]"/>
   <arg name="first_tb3"  default="tb3_0"/>
   <arg name="second_tb3" default="tb3_1"/>
   <arg name="third_tb3"  default="tb3_2"/>
+  <arg name="bot_list" default="[$(arg first_tb3),$(arg second_tb3),$(arg third_tb3)]"/>
+  <rosparam param="/bot_list" subst_value="True">$(arg bot_list)</rosparam> 
 
-  <arg name="first_tb3_x_pos" default="-7.0"/>
+  <arg name="first_tb3_x_pos" default="-1.0"/>
   <arg name="first_tb3_y_pos" default="-1.0"/>
   <arg name="first_tb3_z_pos" default=" 0.0"/>
   <arg name="first_tb3_yaw"   default=" 1.57"/>
 
-  <arg name="second_tb3_x_pos" default=" 7.0"/>
+  <arg name="second_tb3_x_pos" default=" 1.0"/>
   <arg name="second_tb3_y_pos" default="-1.0"/>
   <arg name="second_tb3_z_pos" default=" 0.0"/>
   <arg name="second_tb3_yaw"   default=" 1.57"/>
 
   <arg name="third_tb3_x_pos" default=" 0.5"/>
-  <arg name="third_tb3_y_pos" default=" 3.0"/>
+  <arg name="third_tb3_y_pos" default=" 1.0"/>
   <arg name="third_tb3_z_pos" default=" 0.0"/>
   <arg name="third_tb3_yaw"   default=" 0.0"/>
   
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
-    <arg name="world_name" value="$(find turtlebot3_gazebo)/worlds/turtlebot3_house.world"/>
+    <arg name="world_name" value="$(find turtlebot3_gazebo)/worlds/empty.world"/>
     <arg name="paused" value="false"/>
     <arg name="use_sim_time" value="true"/>
     <arg name="gui" value="true"/>
@@ -47,6 +60,8 @@
       <param name="publish_frequency" type="double" value="50.0" />
       <param name="tf_prefix" value="$(arg first_tb3)" />
     </node>
+
+    <node pkg="flocking_motion" type="flocking_motion" name="flocking_motion" output="screen"/>
     
     <node name="spawn_urdf" pkg="gazebo_ros" type="spawn_model" args="-urdf -model $(arg first_tb3) -x $(arg first_tb3_x_pos) -y $(arg first_tb3_y_pos) -z $(arg first_tb3_z_pos) -Y $(arg first_tb3_yaw) -param robot_description" />
   </group>
@@ -59,6 +74,8 @@
       <param name="tf_prefix" value="$(arg second_tb3)" />
     </node>
 
+    <node pkg="flocking_motion" type="flocking_motion" name="flocking_motion" output="screen"/>
+
     <node name="spawn_urdf" pkg="gazebo_ros" type="spawn_model" args="-urdf -model $(arg second_tb3) -x $(arg second_tb3_x_pos) -y $(arg second_tb3_y_pos) -z $(arg second_tb3_z_pos) -Y $(arg second_tb3_yaw) -param robot_description" />
   </group>
 
@@ -70,6 +87,10 @@
       <param name="tf_prefix" value="$(arg third_tb3)" />
     </node>
 
+    <node pkg="flocking_motion" type="flocking_motion" name="flocking_motion" output="screen"/>
+
     <node name="spawn_urdf" pkg="gazebo_ros" type="spawn_model" args="-urdf -model $(arg third_tb3) -x $(arg third_tb3_x_pos) -y $(arg third_tb3_y_pos) -z $(arg third_tb3_z_pos) -Y $(arg third_tb3_yaw) -param robot_description" />
   </group>
+
+
 </launch>
